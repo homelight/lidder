@@ -1,0 +1,12 @@
+include:
+  - .*.go$
+exclude:
+  - .*_test.go$
+
+rules:
+  - no testing package:
+    pattern: \"testing\"
+  - using os.Exit:
+    pattern: os\.Exit\(
+    expected:
+      - lidder.go
