@@ -4,7 +4,8 @@ jobs:
     docker:
       - image: circleci/golang:1.8
 
-    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    working_directory: /go/src/github.com/helloeave/lidder
+
     steps:
       - checkout
       - run: go get -v -t -d ./...
