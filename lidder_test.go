@@ -47,7 +47,7 @@ func (s *Zuite) TestParseConfiguration() {
 	d, err := configFile()
 	require.NoError(s.T(), err)
 
-	require.Equal(s.T(), []string{"^abc/.*\\.go$","^def/.*\\.go$"}, d.Include)
+	require.Equal(s.T(), []string{"^abc/.*\\.go$", "^def/.*\\.go$"}, d.Include)
 	require.Equal(s.T(), []string{"^.*\\bvendor/.*$", "^.*_test\\.go$"}, d.Exclude)
 	require.Equal(s.T(), 1, len(d.Rules))
 	for _, rule := range d.Rules {
@@ -89,7 +89,7 @@ func (s *Zuite) TestMatchAgainstLine() {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		require.Equal(s.T(), []string{"file_c.go"}, shouldNotBeThere)
 		sort.Strings(shouldBeThere)
-		require.Equal(s.T(), []string{"file_a.go","file_b.go"}, shouldBeThere)
+		require.Equal(s.T(), []string{"file_a.go", "file_b.go"}, shouldBeThere)
 	}
 
 	for _, line := range testLines {
@@ -97,7 +97,7 @@ func (s *Zuite) TestMatchAgainstLine() {
 	}
 
 	for _, rule := range d.Rules {
-		require.Equal(s.T(), map[string]bool{"file_c.go": true, "file_a.go":true}, rule.actualFilenames)
+		require.Equal(s.T(), map[string]bool{"file_c.go": true, "file_a.go": true}, rule.actualFilenames)
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		require.Equal(s.T(), []string{"file_c.go"}, shouldNotBeThere)
 		require.Equal(s.T(), []string{"file_b.go"}, shouldBeThere)
