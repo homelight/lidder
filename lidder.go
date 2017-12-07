@@ -208,7 +208,9 @@ func main() {
 		oops(err)
 	}
 
+	singleFileMode := false
 	if len(os.Args) == 3 && results.shouldCheck(os.Args[2]) {
+		singleFileMode = true
 		results.adjustExpectedFilenames(os.Args[2])
 		err = results.matchAgainstFile(os.Args[2])
 	} else {
@@ -223,19 +225,27 @@ func main() {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			testFailed = true
-			fmt.Println(rule.Pattern)
-			if len(shouldNotBeThere) != 0 {
-				fmt.Println("  didn't expect to find:")
-				for _, s := range shouldNotBeThere {
-					fmt.Print("   - ")
-					fmt.Println(s)
+			if singleFileMode {
+				if len(shouldNotBeThere) != 0 {
+					fmt.Printf("Lidded pattern '%s' found\n", rule.Pattern)
+				} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
+					fmt.Printf("Lidded pattern '%s' expected but not found\n", rule.Pattern)
 				}
-			}
-			if len(shouldBeThere) != 0 {
-				fmt.Println("  expected exceptions which were missing:")
-				for _, s := range shouldBeThere {
-					fmt.Print("   - ")
-					fmt.Println(s)
+			} else {
+				fmt.Println(rule.Pattern)
+				if len(shouldNotBeThere) != 0 {
+					fmt.Println("  didn't expect to find:")
+					for _, s := range shouldNotBeThere {
+						fmt.Print("   - ")
+						fmt.Println(s)
+					}
+				}
+				if len(shouldBeThere) != 0 {
+					fmt.Println("  expected exceptions which were missing:")
+					for _, s := range shouldBeThere {
+						fmt.Print("   - ")
+						fmt.Println(s)
+					}
 				}
 			}
 		}
