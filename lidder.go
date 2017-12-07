@@ -89,22 +89,42 @@ func parse(input []byte) (*defs, error) {
 	return &defs, nil
 }
 
+// for single file mode, make it expect *only* the single file if it was expected
+func (defs *defs) adjustExpectedFilenames(filename string) {
+	for _, r := range defs.Rules {
+		newExpectedFilenames := make(map[string]bool)
+		if r.expectedFilenames[filename] {
+			newExpectedFilenames[filename] = true
+		}
+		r.expectedFilenames = newExpectedFilenames
+	}
+}
+
 func (rule *rule) Mismatches() ([]string, []string) {
 	var (
 		shouldNotBeThere = make([]string, 0)
 		shouldBeThere    = make([]string, 0)
 	)
-	for actual, _ := range rule.actualFilenames {
+	for actual := range rule.actualFilenames {
 		if !rule.expectedFilenames[actual] {
 			shouldNotBeThere = append(shouldNotBeThere, actual)
 		}
 	}
-	for expected, _ := range rule.expectedFilenames {
+	for expected := range rule.expectedFilenames {
 		if !rule.actualFilenames[expected] {
 			shouldBeThere = append(shouldBeThere, expected)
 		}
 	}
 	return shouldNotBeThere, shouldBeThere
+}
+
+func (defs *defs) matchAgainstLine(filename, line string) {
+	// for every line, match against all (would be nice to use channels for that)
+	for _, rule := range defs.Rules {
+		if rule.pattern.Match([]byte(line)) {
+			rule.actualFilenames[filename] = true
+		}
+	}
 }
 
 func (defs *defs) matchAgainstFile(filename string) error {
@@ -123,12 +143,7 @@ func (defs *defs) matchAgainstFile(filename string) error {
 			return err
 		}
 
-		// for every line, match against all (would be nice to use channels for that)
-		for _, rule := range defs.Rules {
-			if rule.pattern.Match([]byte(line)) {
-				rule.actualFilenames[filename] = true
-			}
-		}
+		defs.matchAgainstLine(filename, line)
 	}
 }
 
@@ -138,7 +153,6 @@ func (defs *defs) exploreDir(dirname string) error {
 		return err
 	}
 
-next_file:
 	for _, fi := range files {
 		filename := filepath.Join(dirname, fi.Name())
 		switch mode := fi.Mode(); {
@@ -148,19 +162,11 @@ next_file:
 				return err
 			}
 		case mode.IsRegular():
-			for _, exclude := range defs.exclude {
-				if exclude.Match([]byte(filename)) {
-					continue next_file
+			if defs.shouldCheck(filename) {
+				err := defs.matchAgainstFile(filename)
+				if err != nil {
+					return err
 				}
-			}
-			for _, include := range defs.include {
-				if !include.Match([]byte(filename)) {
-					continue next_file
-				}
-			}
-			err := defs.matchAgainstFile(filename)
-			if err != nil {
-				return err
 			}
 		}
 	}
@@ -168,9 +174,27 @@ next_file:
 	return nil
 }
 
+func (defs *defs) shouldCheck(filename string) bool {
+	// prioritize exclusions over inclusions
+	// matching any means we don't process the file
+	for _, exclude := range defs.exclude {
+		if exclude.Match([]byte(filename)) {
+			return false
+		}
+	}
+	// matching any means we process the file
+	for _, include := range defs.include {
+		if include.Match([]byte(filename)) {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Printf("usage: lidder config.yaml\n")
+	if len(os.Args) != 2 && len(os.Args) != 3 {
+		fmt.Println("usage: lidder config.yaml [file]")
+		fmt.Println("  -- If [file] is not specified, defaults to scanning all files from the current directory recursively")
 		os.Exit(1)
 	}
 
@@ -184,7 +208,12 @@ func main() {
 		oops(err)
 	}
 
-	err = results.exploreDir(".")
+	if len(os.Args) == 3 && results.shouldCheck(os.Args[2]) {
+		results.adjustExpectedFilenames(os.Args[2])
+		err = results.matchAgainstFile(os.Args[2])
+	} else {
+		err = results.exploreDir(".")
+	}
 	if err != nil {
 		oops(err)
 	}
