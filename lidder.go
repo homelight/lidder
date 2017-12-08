@@ -281,7 +281,7 @@ func main() {
 		modePath = os.Args[2]
 	} else {
 		fmt.Println("usage: lidder config.yaml [file]")
-		fmt.Println("  -- If [file] is not specified, defaults to scanning all files from the current directory recursively")
+		fmt.Println("  file     Optional. When specified, lidder only checks the specified file.")
 		os.Exit(1)
 	}
 
