@@ -201,11 +201,11 @@ func fullScanMode(configFilename, baseDir string) bool {
 		oops(err)
 	}
 
-	testFailed := false
+	success := true
 	for _, rule := range results.Rules {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
-			testFailed = true
+			success = false
 			fmt.Println(rule.Pattern)
 			if len(shouldNotBeThere) != 0 {
 				fmt.Println("  didn't expect to find:")
@@ -224,7 +224,7 @@ func fullScanMode(configFilename, baseDir string) bool {
 		}
 	}
 
-	return testFailed
+	return success
 }
 
 func singleFileMode(configFilename, filename string) bool {
