@@ -121,7 +121,7 @@ func (rule *rule) Mismatches() ([]string, []string) {
 func (defs *defs) matchAgainstLine(filename, line string) {
 	// for every line, match against all (would be nice to use channels for that)
 	for _, rule := range defs.Rules {
-		if rule.pattern.Match([]byte(line)) {
+		if rule.pattern.MatchString(line) {
 			rule.actualFilenames[filename] = true
 		}
 	}
@@ -176,46 +176,27 @@ func (defs *defs) exploreDir(dirname string) error {
 
 func (defs *defs) shouldCheck(filename string) bool {
 	// prioritize exclusions over inclusions
-	// matching any means we don't process the file
+	// any exclusion means we do not process the file
 	for _, exclude := range defs.exclude {
 		if exclude.Match([]byte(filename)) {
 			return false
 		}
 	}
-	// matching any means we process the file
+
+	// any inclusion means we process the file
 	for _, include := range defs.include {
 		if include.Match([]byte(filename)) {
 			return true
 		}
 	}
+
 	return false
 }
 
-func main() {
-	if len(os.Args) != 2 && len(os.Args) != 3 {
-		fmt.Println("usage: lidder config.yaml [file]")
-		fmt.Println("  -- If [file] is not specified, defaults to scanning all files from the current directory recursively")
-		os.Exit(1)
-	}
+func fullScanMode(configFilename, baseDir string) bool {
+	results := parseConfig(configFilename)
 
-	config, err := ioutil.ReadFile(os.Args[1])
-	if err != nil {
-		oops(err)
-	}
-
-	results, err := parse(config)
-	if err != nil {
-		oops(err)
-	}
-
-	singleFileMode := false
-	if len(os.Args) == 3 && results.shouldCheck(os.Args[2]) {
-		singleFileMode = true
-		results.adjustExpectedFilenames(os.Args[2])
-		err = results.matchAgainstFile(os.Args[2])
-	} else {
-		err = results.exploreDir(".")
-	}
+	err := results.exploreDir(baseDir)
 	if err != nil {
 		oops(err)
 	}
@@ -225,38 +206,92 @@ func main() {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			testFailed = true
-			if singleFileMode {
-				if len(shouldNotBeThere) != 0 {
-					fmt.Printf("Lidded pattern '%s' found\n", rule.Pattern)
-				} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
-					fmt.Printf("Lidded pattern '%s' expected but not found\n", rule.Pattern)
+			fmt.Println(rule.Pattern)
+			if len(shouldNotBeThere) != 0 {
+				fmt.Println("  didn't expect to find:")
+				for _, s := range shouldNotBeThere {
+					fmt.Print("   - ")
+					fmt.Println(s)
 				}
-			} else {
-				fmt.Println(rule.Pattern)
-				if len(shouldNotBeThere) != 0 {
-					fmt.Println("  didn't expect to find:")
-					for _, s := range shouldNotBeThere {
-						fmt.Print("   - ")
-						fmt.Println(s)
-					}
-				}
-				if len(shouldBeThere) != 0 {
-					fmt.Println("  expected exceptions which were missing:")
-					for _, s := range shouldBeThere {
-						fmt.Print("   - ")
-						fmt.Println(s)
-					}
+			}
+			if len(shouldBeThere) != 0 {
+				fmt.Println("  expected exceptions which were missing:")
+				for _, s := range shouldBeThere {
+					fmt.Print("   - ")
+					fmt.Println(s)
 				}
 			}
 		}
 	}
 
-	if testFailed {
+	return testFailed
+}
+
+func singleFileMode(configFilename, filename string) bool {
+	results := parseConfig(configFilename)
+
+	if !results.shouldCheck(filename) {
+		return true
+	}
+
+	results.adjustExpectedFilenames(filename)
+	err := results.matchAgainstFile(filename)
+	if err != nil {
+		oops(err)
+	}
+
+	success := true
+	for _, rule := range results.Rules {
+		shouldNotBeThere, shouldBeThere := rule.Mismatches()
+		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
+			success = false
+			if len(shouldNotBeThere) != 0 {
+				fmt.Printf("Lidded pattern '%s' found\n", rule.Pattern)
+			} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
+				fmt.Printf("Lidded pattern '%s' expected but not found\n", rule.Pattern)
+			}
+		}
+	}
+
+	return success
+}
+
+func parseConfig(filename string) *defs {
+	config, err := ioutil.ReadFile(filename)
+	if err != nil {
+		oops(err)
+	}
+
+	results, err := parse(config)
+	if err != nil {
+		oops(err)
+	}
+
+	return results
+}
+
+func main() {
+	var handler func(string, string) bool
+	var modePath string
+	if len(os.Args) == 2 {
+		handler = fullScanMode
+		modePath = "."
+	} else if len(os.Args) == 3 {
+		handler = singleFileMode
+		modePath = os.Args[2]
+	} else {
+		fmt.Println("usage: lidder config.yaml [file]")
+		fmt.Println("  -- If [file] is not specified, defaults to scanning all files from the current directory recursively")
+		os.Exit(1)
+	}
+
+	if ok := handler(os.Args[1], modePath); !ok {
 		fmt.Print("\nlid test failed. sorry.\n")
 		os.Exit(2)
 	}
 
 	fmt.Println("ok\tlid on all the things, nothing to see here.")
+	os.Exit(0)
 }
 
 func oops(err error) {
