@@ -13,22 +13,27 @@
 package main
 
 import (
+	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
 type Zuite struct {
 	suite.Suite
+	defs *defs
 }
 
-func (s *Zuite) TestParseConfiguration() {
+func (s *Zuite) SetupTest() {
 	conf := `
 include:
-  - ^.*\.go$
+  - ^abc/.*\.go$
+  - ^def/.*\.go$
 exclude:
   - ^.*\bvendor/.*$
+  - ^.*_test\.go$
 
 rules:
   - some cool rule:
@@ -37,15 +42,63 @@ rules:
       - file_a.go
       - file_b.go`
 
-	d, err := parse([]byte(conf))
-	require.NoError(s.T(), err)
+	defs, err := parse([]byte(conf))
+	if err != nil {
+		panic(err)
+	}
 
-	require.Equal(s.T(), []string{"^.*\\.go$"}, d.Include)
-	require.Equal(s.T(), []string{"^.*\\bvendor/.*$"}, d.Exclude)
-	require.Equal(s.T(), 1, len(d.Rules))
-	for _, rule := range d.Rules {
+	s.defs = defs
+}
+
+func (s *Zuite) TestParseConfiguration() {
+	require.Equal(s.T(), []string{"^abc/.*\\.go$", "^def/.*\\.go$"}, s.defs.Include)
+	require.Equal(s.T(), []string{"^.*\\bvendor/.*$", "^.*_test\\.go$"}, s.defs.Exclude)
+	require.Equal(s.T(), 1, len(s.defs.Rules))
+	for _, rule := range s.defs.Rules {
 		require.Equal(s.T(), "panic\\(", rule.Pattern)
 		require.Equal(s.T(), []string{"file_a.go", "file_b.go"}, rule.Expected)
+	}
+}
+
+func (s *Zuite) TestShouldCheck() {
+	assert.False(s.T(), s.defs.shouldCheck("abc/hello_test.go"))
+	assert.True(s.T(), s.defs.shouldCheck("abc/hello.go"))
+	assert.True(s.T(), s.defs.shouldCheck("def/goodbye.go"))
+	assert.False(s.T(), s.defs.shouldCheck("abcdef/goodbye.go"))
+}
+
+func (s *Zuite) TestRuleMatching() {
+	testLines := []string{
+		"if blah == blahblah {",
+		"    panic(\"whoa\")",
+		"}",
+	}
+
+	for _, rule := range s.defs.Rules {
+		require.Equal(s.T(), 0, len(rule.actualFilenames))
+	}
+
+	for _, line := range testLines {
+		s.defs.matchAgainstLine("file_c.go", line)
+	}
+
+	for _, rule := range s.defs.Rules {
+		require.Equal(s.T(), map[string]bool{"file_c.go": true}, rule.actualFilenames)
+		shouldNotBeThere, shouldBeThere := rule.Mismatches()
+		require.Equal(s.T(), []string{"file_c.go"}, shouldNotBeThere)
+		sort.Strings(shouldBeThere)
+		require.Equal(s.T(), []string{"file_a.go", "file_b.go"}, shouldBeThere)
+	}
+
+	for _, line := range testLines {
+		s.defs.matchAgainstLine("file_a.go", line)
+	}
+
+	for _, rule := range s.defs.Rules {
+		require.Equal(s.T(), map[string]bool{"file_c.go": true, "file_a.go": true}, rule.actualFilenames)
+		shouldNotBeThere, shouldBeThere := rule.Mismatches()
+		require.Equal(s.T(), []string{"file_c.go"}, shouldNotBeThere)
+		require.Equal(s.T(), []string{"file_b.go"}, shouldBeThere)
 	}
 }
 

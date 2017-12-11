@@ -89,22 +89,42 @@ func parse(input []byte) (*defs, error) {
 	return &defs, nil
 }
 
+// for single file mode, make it expect *only* the single file if it was expected
+func (defs *defs) adjustExpectedFilenames(filename string) {
+	for _, r := range defs.Rules {
+		newExpectedFilenames := make(map[string]bool)
+		if r.expectedFilenames[filename] {
+			newExpectedFilenames[filename] = true
+		}
+		r.expectedFilenames = newExpectedFilenames
+	}
+}
+
 func (rule *rule) Mismatches() ([]string, []string) {
 	var (
 		shouldNotBeThere = make([]string, 0)
 		shouldBeThere    = make([]string, 0)
 	)
-	for actual, _ := range rule.actualFilenames {
+	for actual := range rule.actualFilenames {
 		if !rule.expectedFilenames[actual] {
 			shouldNotBeThere = append(shouldNotBeThere, actual)
 		}
 	}
-	for expected, _ := range rule.expectedFilenames {
+	for expected := range rule.expectedFilenames {
 		if !rule.actualFilenames[expected] {
 			shouldBeThere = append(shouldBeThere, expected)
 		}
 	}
 	return shouldNotBeThere, shouldBeThere
+}
+
+func (defs *defs) matchAgainstLine(filename, line string) {
+	// for every line, match against all (would be nice to use channels for that)
+	for _, rule := range defs.Rules {
+		if rule.pattern.MatchString(line) {
+			rule.actualFilenames[filename] = true
+		}
+	}
 }
 
 func (defs *defs) matchAgainstFile(filename string) error {
@@ -123,12 +143,7 @@ func (defs *defs) matchAgainstFile(filename string) error {
 			return err
 		}
 
-		// for every line, match against all (would be nice to use channels for that)
-		for _, rule := range defs.Rules {
-			if rule.pattern.Match([]byte(line)) {
-				rule.actualFilenames[filename] = true
-			}
-		}
+		defs.matchAgainstLine(filename, line)
 	}
 }
 
@@ -138,7 +153,6 @@ func (defs *defs) exploreDir(dirname string) error {
 		return err
 	}
 
-next_file:
 	for _, fi := range files {
 		filename := filepath.Join(dirname, fi.Name())
 		switch mode := fi.Mode(); {
@@ -148,19 +162,11 @@ next_file:
 				return err
 			}
 		case mode.IsRegular():
-			for _, exclude := range defs.exclude {
-				if exclude.Match([]byte(filename)) {
-					continue next_file
+			if defs.shouldCheck(filename) {
+				err := defs.matchAgainstFile(filename)
+				if err != nil {
+					return err
 				}
-			}
-			for _, include := range defs.include {
-				if !include.Match([]byte(filename)) {
-					continue next_file
-				}
-			}
-			err := defs.matchAgainstFile(filename)
-			if err != nil {
-				return err
 			}
 		}
 	}
@@ -168,32 +174,38 @@ next_file:
 	return nil
 }
 
-func main() {
-	if len(os.Args) != 2 {
-		fmt.Printf("usage: lidder config.yaml\n")
-		os.Exit(1)
+func (defs *defs) shouldCheck(filename string) bool {
+	// prioritize exclusions over inclusions
+	// any exclusion means we do not process the file
+	for _, exclude := range defs.exclude {
+		if exclude.Match([]byte(filename)) {
+			return false
+		}
 	}
 
-	config, err := ioutil.ReadFile(os.Args[1])
+	// any inclusion means we process the file
+	for _, include := range defs.include {
+		if include.Match([]byte(filename)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func fullScanMode(configFilename, baseDir string) bool {
+	results := parseConfig(configFilename)
+
+	err := results.exploreDir(baseDir)
 	if err != nil {
 		oops(err)
 	}
 
-	results, err := parse(config)
-	if err != nil {
-		oops(err)
-	}
-
-	err = results.exploreDir(".")
-	if err != nil {
-		oops(err)
-	}
-
-	testFailed := false
+	success := true
 	for _, rule := range results.Rules {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
-			testFailed = true
+			success = false
 			fmt.Println(rule.Pattern)
 			if len(shouldNotBeThere) != 0 {
 				fmt.Println("  didn't expect to find:")
@@ -212,12 +224,74 @@ func main() {
 		}
 	}
 
-	if testFailed {
+	return success
+}
+
+func singleFileMode(configFilename, filename string) bool {
+	results := parseConfig(configFilename)
+
+	if !results.shouldCheck(filename) {
+		return true
+	}
+
+	results.adjustExpectedFilenames(filename)
+	err := results.matchAgainstFile(filename)
+	if err != nil {
+		oops(err)
+	}
+
+	success := true
+	for _, rule := range results.Rules {
+		shouldNotBeThere, shouldBeThere := rule.Mismatches()
+		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
+			success = false
+			if len(shouldNotBeThere) != 0 {
+				fmt.Printf("Lidded pattern '%s' found\n", rule.Pattern)
+			} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
+				fmt.Printf("Lidded pattern '%s' expected but not found\n", rule.Pattern)
+			}
+		}
+	}
+
+	return success
+}
+
+func parseConfig(filename string) *defs {
+	config, err := ioutil.ReadFile(filename)
+	if err != nil {
+		oops(err)
+	}
+
+	results, err := parse(config)
+	if err != nil {
+		oops(err)
+	}
+
+	return results
+}
+
+func main() {
+	var handler func(string, string) bool
+	var modePath string
+	if len(os.Args) == 2 {
+		handler = fullScanMode
+		modePath = "."
+	} else if len(os.Args) == 3 {
+		handler = singleFileMode
+		modePath = os.Args[2]
+	} else {
+		fmt.Println("usage: lidder config.yaml [file]")
+		fmt.Println("  file     Optional. When specified, lidder only checks the specified file.")
+		os.Exit(1)
+	}
+
+	if ok := handler(os.Args[1], modePath); !ok {
 		fmt.Print("\nlid test failed. sorry.\n")
 		os.Exit(2)
 	}
 
 	fmt.Println("ok\tlid on all the things, nothing to see here.")
+	os.Exit(0)
 }
 
 func oops(err error) {
