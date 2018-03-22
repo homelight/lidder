@@ -43,6 +43,13 @@ type rule struct {
 	actualFilenames   map[string]bool
 }
 
+func (rule *rule) String() string {
+	if rule.Name == "" {
+		return fmt.Sprintf("Lidded pattern '%s'", rule.Pattern)
+	}
+	return fmt.Sprintf("Lidded rule '%s' (pattern '%s')", rule.Name, rule.Pattern)
+}
+
 func parse(input []byte) (*defs, error) {
 	// yaml parse
 	var defs defs
@@ -207,7 +214,7 @@ func fullScanMode(configFilename, baseDir string) bool {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			success = false
-			fmt.Println(fmt.Sprintf("%s (pattern: %s)", rule.Name, rule.Pattern))
+			fmt.Printf("%s\n", rule)
 			if len(shouldNotBeThere) != 0 {
 				fmt.Println("  didn't expect to find:")
 				for _, s := range shouldNotBeThere {
@@ -247,9 +254,9 @@ func singleFileMode(configFilename, filename string) bool {
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			success = false
 			if len(shouldNotBeThere) != 0 {
-				fmt.Printf("Lidded rule '%s' (pattern '%s') found\n", rule.Name, rule.Pattern)
+				fmt.Printf("%s found\n", rule)
 			} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
-				fmt.Printf("Lidded rule '%s' (pattern '%s') expected but not found\n", rule.Name, rule.Pattern)
+				fmt.Printf("%s expected but not found\n", rule)
 			}
 		}
 	}
