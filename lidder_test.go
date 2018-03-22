@@ -36,7 +36,7 @@ exclude:
   - ^.*_test\.go$
 
 rules:
-  - some cool rule:
+  - name: some cool rule
     pattern: panic\(
     expected:
       - file_a.go
