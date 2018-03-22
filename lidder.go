@@ -34,6 +34,7 @@ type defs struct {
 }
 
 type rule struct {
+	Name     string
 	Pattern  string
 	Expected []string
 
@@ -206,7 +207,7 @@ func fullScanMode(configFilename, baseDir string) bool {
 		shouldNotBeThere, shouldBeThere := rule.Mismatches()
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			success = false
-			fmt.Println(rule.Pattern)
+			fmt.Println(fmt.Sprintf("%s (pattern: %s)", rule.Name, rule.Pattern))
 			if len(shouldNotBeThere) != 0 {
 				fmt.Println("  didn't expect to find:")
 				for _, s := range shouldNotBeThere {
@@ -246,9 +247,9 @@ func singleFileMode(configFilename, filename string) bool {
 		if len(shouldNotBeThere) != 0 || len(shouldBeThere) != 0 {
 			success = false
 			if len(shouldNotBeThere) != 0 {
-				fmt.Printf("Lidded pattern '%s' found\n", rule.Pattern)
+				fmt.Printf("Lidded rule '%s' (pattern '%s') found\n", rule.Name, rule.Pattern)
 			} else if len(shouldBeThere) != 0 { // mutually exclusive for a single file
-				fmt.Printf("Lidded pattern '%s' expected but not found\n", rule.Pattern)
+				fmt.Printf("Lidded rule '%s' (pattern '%s') expected but not found\n", rule.Name, rule.Pattern)
 			}
 		}
 	}

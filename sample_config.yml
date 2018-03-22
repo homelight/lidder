@@ -4,9 +4,9 @@ exclude:
   - .*_test.go$
 
 rules:
-  - no testing package:
+  - name: no testing package
     pattern: \"testing\"
-  - using os.Exit:
+  - name: using os.Exit
     pattern: os\.Exit\(
     expected:
       - lidder.go
