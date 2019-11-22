@@ -4,7 +4,7 @@ jobs:
     docker:
       - image: circleci/golang:1.8
 
-    working_directory: /go/src/github.com/helloeave/lidder
+    working_directory: /go/src/github.com/homelight/lidder
 
     steps:
       - checkout
